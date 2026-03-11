@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, type KeyboardEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Send, MessageSquare } from 'lucide-react'
 import useSWR from 'swr'
 import { useChat } from '../hooks/use-chat'
@@ -25,12 +25,23 @@ function getGreeting(t: (key: any) => string, name: string): string {
 
 export function HomePage() {
   const { t } = useI18n()
+  const location = useLocation()
   const chatState = useChat()
-  const { messages, streaming, sendMessage } = chatState
+  const { messages, streaming, sendMessage, reset } = chatState
   const { data: profile } = useSWR<{ account_name: string }>('/api/settings/profile', fetcher)
 
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Reset chat when logo is clicked (navigates to / with reset state)
+  const resetKey = (location.state as any)?.reset
+  const lastResetRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (resetKey && resetKey !== lastResetRef.current) {
+      lastResetRef.current = resetKey
+      reset()
+    }
+  }, [resetKey, reset])
 
   const hasMessages = messages.length > 0
 
