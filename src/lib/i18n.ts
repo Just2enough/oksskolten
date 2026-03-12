@@ -359,6 +359,7 @@ const dict = {
   'settings.themeUpdated': { ja: 'テーマを更新しました', en: 'Theme updated successfully' },
   'settings.editTheme': { ja: 'テーマを編集', en: 'Edit theme' },
   'settings.updateButton': { ja: '更新', en: 'Update' },
+  'settings.sampleButton': { ja: 'サンプル', en: 'Sample' },
   'settings.themeLimit': { ja: 'カスタムテーマは最大20個までです', en: 'Maximum 20 custom themes allowed' },
 
   // Mascot

@@ -564,6 +564,42 @@ export function AppearanceTab() {
   )
 }
 
+const SAMPLE_THEME_JSON = JSON.stringify({
+  name: 'everforest',
+  label: 'Everforest',
+  indicatorStyle: 'line',
+  colors: {
+    light: {
+      background: '#fdf6e3',
+      'background.sidebar': '#f4eed4',
+      'background.subtle': '#efebc8',
+      'background.avatar': '#e0dab8',
+      text: '#5c6a72',
+      'text.muted': '#829181',
+      accent: '#8da101',
+      'accent.text': '#fdf6e3',
+      error: '#f85552',
+      border: '#e0dab8',
+      hover: 'rgba(0, 0, 0, 0.04)',
+      overlay: 'rgba(0, 0, 0, 0.25)',
+    },
+    dark: {
+      background: '#2d353b',
+      'background.sidebar': '#272e33',
+      'background.subtle': '#343f44',
+      'background.avatar': '#475258',
+      text: '#d3c6aa',
+      'text.muted': '#859289',
+      accent: '#a7c080',
+      'accent.text': '#2d353b',
+      error: '#e67e80',
+      border: '#475258',
+      hover: 'rgba(255, 255, 255, 0.05)',
+      overlay: 'rgba(0, 0, 0, 0.5)',
+    },
+  },
+}, null, 2)
+
 function ThemeJsonDialog({
   open,
   onOpenChange,
@@ -646,23 +682,34 @@ function ThemeJsonDialog({
 
         {error && <p className="text-xs text-error">{error}</p>}
 
-        <DialogFooter>
-          <button
-            type="button"
-            className="text-xs px-4 py-2 rounded-md border border-border text-muted hover:text-text hover:bg-hover transition-colors"
-            onClick={handleClose}
-          >
-            {t('settings.cancel')}
-          </button>
-          <button
-            type="button"
-            className="text-xs px-4 py-2 rounded-md bg-accent text-accent-text hover:opacity-90 transition-opacity disabled:opacity-50"
-            disabled={!jsonText.trim()}
-            onClick={doSave}
-          >
-            {isEditing ? t('settings.updateButton') : t('settings.importButton')}
-          </button>
-        </DialogFooter>
+        <div className="flex items-center">
+          {!isEditing && (
+            <button
+              type="button"
+              className="text-xs px-4 py-2 rounded-md border border-border text-muted hover:text-text hover:bg-hover transition-colors"
+              onClick={() => { setJsonText(SAMPLE_THEME_JSON); setError(null) }}
+            >
+              {t('settings.sampleButton')}
+            </button>
+          )}
+          <DialogFooter className="flex-1">
+            <button
+              type="button"
+              className="text-xs px-4 py-2 rounded-md border border-border text-muted hover:text-text hover:bg-hover transition-colors"
+              onClick={handleClose}
+            >
+              {t('settings.cancel')}
+            </button>
+            <button
+              type="button"
+              className="text-xs px-4 py-2 rounded-md bg-accent text-accent-text hover:opacity-90 transition-opacity disabled:opacity-50"
+              disabled={!jsonText.trim()}
+              onClick={doSave}
+            >
+              {isEditing ? t('settings.updateButton') : t('settings.importButton')}
+            </button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )
