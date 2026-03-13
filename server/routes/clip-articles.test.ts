@@ -11,12 +11,11 @@ import fs from 'node:fs'
 // Mocks
 // ---------------------------------------------------------------------------
 
-const { mockFetchFullText, mockDetectLanguage, mockArchiveArticleImages, mockIsImageArchivingEnabled, mockDeleteArticleImages } = vi.hoisted(() => ({
-  mockFetchFullText: vi.fn(),
-  mockDetectLanguage: vi.fn(),
+const { mockArchiveArticleImages, mockIsImageArchivingEnabled, mockDeleteArticleImages, mockFetchArticleContent } = vi.hoisted(() => ({
   mockArchiveArticleImages: vi.fn(),
   mockIsImageArchivingEnabled: vi.fn(),
   mockDeleteArticleImages: vi.fn(),
+  mockFetchArticleContent: vi.fn(),
 }))
 
 vi.mock('../fetcher.js', async () => {
@@ -31,19 +30,12 @@ vi.mock('../fetcher.js', async () => {
     streamTranslateArticle: vi.fn(),
     fetchProgress: new EventEmitter(),
     getFeedState: vi.fn(),
+    fetchArticleContent: (...args: unknown[]) => mockFetchArticleContent(...args),
   }
 })
 
 vi.mock('../anthropic.js', () => ({
   anthropic: { messages: { stream: vi.fn(), create: vi.fn() } },
-}))
-
-vi.mock('../fetcher/content.js', () => ({
-  fetchFullText: (...args: unknown[]) => mockFetchFullText(...args),
-}))
-
-vi.mock('../fetcher/ai.js', () => ({
-  detectLanguage: (...args: unknown[]) => mockDetectLanguage(...args),
 }))
 
 vi.mock('../fetcher/article-images.js', () => ({
@@ -77,13 +69,14 @@ beforeEach(async () => {
   setupTestDb()
   app = await buildApp()
   vi.clearAllMocks()
-  mockFetchFullText.mockResolvedValue({
+  mockFetchArticleContent.mockResolvedValue({
     fullText: 'Fetched article content',
     ogImage: 'https://example.com/og.jpg',
     excerpt: 'Short excerpt',
+    lang: 'en',
+    lastError: null,
     title: 'Fetched Title',
   })
-  mockDetectLanguage.mockReturnValue('en')
   mockIsImageArchivingEnabled.mockReturnValue(false)
   mockArchiveArticleImages.mockResolvedValue({ rewrittenText: '', downloaded: 0, errors: 0 })
   mockDeleteArticleImages.mockReturnValue(0)
@@ -111,8 +104,7 @@ describe('POST /api/articles/from-url', () => {
     expect(body.article.full_text).toBe('Fetched article content')
     expect(body.article.og_image).toBe('https://example.com/og.jpg')
     expect(body.article.lang).toBe('en')
-    expect(mockFetchFullText).toHaveBeenCalledWith('https://blog.example.com/post-1')
-    expect(mockDetectLanguage).toHaveBeenCalledWith('Fetched article content')
+    expect(mockFetchArticleContent).toHaveBeenCalledWith('https://blog.example.com/post-1')
   })
 
   it('201: uses provided title over fetched title', async () => {
@@ -131,10 +123,12 @@ describe('POST /api/articles/from-url', () => {
 
   it('201: falls back to hostname when no title', async () => {
     ensureClipFeed()
-    mockFetchFullText.mockResolvedValue({
+    mockFetchArticleContent.mockResolvedValue({
       fullText: 'Content',
       ogImage: null,
       excerpt: null,
+      lang: 'en',
+      lastError: null,
       title: null,
     })
 
@@ -151,7 +145,14 @@ describe('POST /api/articles/from-url', () => {
 
   it('201: stores last_error when fetchFullText fails (graceful degradation)', async () => {
     ensureClipFeed()
-    mockFetchFullText.mockRejectedValue(new Error('Network timeout'))
+    mockFetchArticleContent.mockResolvedValue({
+      fullText: null,
+      ogImage: null,
+      excerpt: null,
+      lang: null,
+      lastError: 'fetchFullText: Network timeout',
+      title: null,
+    })
 
     const res = await app.inject({
       method: 'POST',

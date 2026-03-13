@@ -28,10 +28,8 @@ import type { MeiliArticleDoc } from '../search/client.js'
 import { buildMeiliFilter, meiliSearch, meiliSearchWithPagination } from '../search/client.js'
 import { isSearchReady, syncArticleToSearch } from '../search/sync.js'
 import { requireJson } from '../auth.js'
-import { summarizeArticle, translateArticle, streamSummarizeArticle, streamTranslateArticle } from '../fetcher.js'
+import { summarizeArticle, translateArticle, streamSummarizeArticle, streamTranslateArticle, fetchArticleContent } from '../fetcher.js'
 import type { AiTextResult } from '../fetcher.js'
-import { fetchFullText } from '../fetcher/content.js'
-import { detectLanguage } from '../fetcher/ai.js'
 import { archiveArticleImages, isImageArchivingEnabled, deleteArticleImages } from '../fetcher/article-images.js'
 import { getSetting } from '../db/settings.js'
 import { DEFAULT_LANGUAGE } from '../../shared/lang.js'
@@ -338,39 +336,20 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
         return
       }
 
-      // Fetch content
-      let fullText: string | null = null
-      let ogImage: string | null = null
-      let excerpt: string | null = null
-      let pageTitle: string | null = null
-      let lang: string | null = null
-      let lastError: string | null = null
+      // Fetch content (same pipeline as RSS feeds)
+      const content = await fetchArticleContent(body.url)
 
-      try {
-        const result = await fetchFullText(body.url)
-        fullText = result.fullText
-        ogImage = result.ogImage
-        excerpt = result.excerpt
-        pageTitle = result.title
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : 'Failed to fetch content'
-      }
-
-      if (fullText) {
-        lang = detectLanguage(fullText)
-      }
-
-      const title = body.title || pageTitle || new URL(body.url).hostname
+      const title = body.title || content.title || new URL(body.url).hostname
       const articleId = insertArticle({
         feed_id: clipFeed.id,
         title,
         url: body.url,
         published_at: new Date().toISOString(),
-        lang,
-        full_text: fullText,
-        excerpt,
-        og_image: ogImage,
-        last_error: lastError,
+        lang: content.lang,
+        full_text: content.fullText,
+        excerpt: content.excerpt,
+        og_image: content.ogImage,
+        last_error: content.lastError,
       })
 
       const article = getArticleById(articleId)

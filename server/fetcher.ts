@@ -29,6 +29,73 @@ export { discoverRssUrl } from './fetcher/rss.js'
 export { detectLanguage, summarizeArticle, streamSummarizeArticle, translateArticle, streamTranslateArticle } from './fetcher/ai.js'
 export type { AiTextResult, AiBillingMode } from './fetcher/ai.js'
 
+// --- Article content fetching (shared by feed pipeline & clip) ---
+
+export interface FetchedContent {
+  fullText: string | null
+  ogImage: string | null
+  excerpt: string | null
+  lang: string | null
+  lastError: string | null
+  /** Title extracted by fetchFullText (from OGP etc.) */
+  title: string | null
+}
+
+export async function fetchArticleContent(
+  url: string,
+  options?: {
+    requiresJsChallenge?: boolean
+    /** CSS Bridge listing-page excerpt, used as fullText fallback */
+    listingExcerpt?: string
+    /** Existing article data for retry (skips fetch if full_text present) */
+    existingArticle?: { full_text: string | null; og_image: string | null; lang: string | null }
+  },
+): Promise<FetchedContent> {
+  let fullText: string | null = null
+  let ogImage: string | null = null
+  let excerpt: string | null = null
+  let lang: string | null = null
+  let lastError: string | null = null
+  let title: string | null = null
+
+  const existing = options?.existingArticle
+
+  // Step 1: Fetch full text (skip if retry article already has content)
+  if (existing?.full_text) {
+    fullText = existing.full_text
+    ogImage = existing.og_image
+  } else {
+    try {
+      const result = await fetchFullText(url, { requiresJsChallenge: options?.requiresJsChallenge })
+      fullText = result.fullText
+      ogImage = result.ogImage
+      excerpt = result.excerpt
+      title = result.title
+    } catch (err) {
+      lastError = `fetchFullText: ${errorMessage(err)}`
+    }
+  }
+
+  // Fallback: use listing-page excerpt from CSS Bridge content_selector
+  if (options?.listingExcerpt) {
+    const shouldFallback = !fullText || isBotBlockPage(fullText)
+    if (shouldFallback) {
+      fullText = options.listingExcerpt
+      excerpt = options.listingExcerpt
+      lastError = null // Clear fetch error — we have fallback content
+    }
+  }
+
+  // Step 2: Detect language (local, no API call)
+  if (fullText && !(existing?.lang)) {
+    lang = detectLanguage(fullText)
+  } else if (existing) {
+    lang = existing.lang
+  }
+
+  return { fullText, ogImage, excerpt, lang, lastError, title }
+}
+
 // --- Article processing ---
 
 interface NewArticle {
@@ -50,52 +117,17 @@ interface RetryArticle {
 type ArticleTask = NewArticle | RetryArticle
 
 async function processArticle(task: ArticleTask): Promise<void> {
-  let fullText: string | null = null
-  let ogImage: string | null = null
-  let excerpt: string | null = null
-  let lang: string | null = null
-  let lastError: string | null = null
-
   const articleUrl = task.kind === 'new' ? task.url : task.article.url
 
-  // Step 1: Fetch full text
-  if (task.kind === 'retry' && task.article.full_text) {
-    fullText = task.article.full_text
-    ogImage = task.article.og_image
-  } else {
-    try {
-      const requiresJsChallenge = task.kind === 'new' ? task.requires_js_challenge : undefined
-      const result = await fetchFullText(articleUrl, { requiresJsChallenge })
-      fullText = result.fullText
-      ogImage = result.ogImage
-      excerpt = result.excerpt
-    } catch (err) {
-      lastError = `fetchFullText: ${errorMessage(err)}`
-    }
-  }
+  const content = await fetchArticleContent(articleUrl, {
+    requiresJsChallenge: task.kind === 'new' ? task.requires_js_challenge : undefined,
+    listingExcerpt: task.kind === 'new' ? task.excerpt : undefined,
+    existingArticle: task.kind === 'retry' ? task.article : undefined,
+  })
 
-  // Fallback: use listing-page excerpt from CSS Bridge content_selector
-  if (task.kind === 'new' && task.excerpt) {
-    const shouldFallback = !fullText || isBotBlockPage(fullText)
-    if (shouldFallback) {
-      fullText = task.excerpt
-      excerpt = task.excerpt
-      lastError = null // Clear fetch error — we have fallback content
-    }
-  }
+  const effectiveLang = content.lang || (task.kind === 'retry' ? task.article.lang : null)
 
-  // Step 2: Detect language (local, no API call)
-  if (fullText && !(task.kind === 'retry' && task.article.lang)) {
-    lang = detectLanguage(fullText)
-  } else if (task.kind === 'retry') {
-    lang = task.article.lang
-  }
-
-  const effectiveLang = lang || (task.kind === 'retry' ? task.article.lang : null)
-
-  // Step 3: Persist
-  if (!lastError) lastError = null
-
+  // Persist
   if (task.kind === 'new') {
     try {
       insertArticle({
@@ -104,12 +136,12 @@ async function processArticle(task: ArticleTask): Promise<void> {
         url: task.url,
         published_at: task.published_at,
         lang: effectiveLang,
-        full_text: fullText,
+        full_text: content.fullText,
         full_text_translated: null,
         summary: null,
-        excerpt,
-        og_image: ogImage,
-        last_error: lastError,
+        excerpt: content.excerpt,
+        og_image: content.ogImage,
+        last_error: content.lastError,
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -120,10 +152,10 @@ async function processArticle(task: ArticleTask): Promise<void> {
   } else {
     updateArticleContent(task.article.id, {
       lang: effectiveLang,
-      full_text: fullText,
-      excerpt,
-      og_image: ogImage,
-      last_error: lastError,
+      full_text: content.fullText,
+      excerpt: content.excerpt,
+      og_image: content.ogImage,
+      last_error: content.lastError,
     })
   }
 }
