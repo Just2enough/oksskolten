@@ -9,7 +9,6 @@ import {
   getArticleByUrl,
   getArticleById,
   getArticlesByIds,
-  checkArticleIds,
   markArticleSeen,
   markArticlesSeen,
   recordArticleRead,
@@ -25,7 +24,7 @@ import {
   type ArticleDetail,
 } from '../db.js'
 import type { MeiliArticleDoc } from '../search/client.js'
-import { buildMeiliFilter, meiliSearch, meiliSearchWithPagination } from '../search/client.js'
+import { buildMeiliFilter, meiliSearch } from '../search/client.js'
 import { isSearchReady, syncArticleToSearch } from '../search/sync.js'
 import { requireJson } from '../auth.js'
 import { summarizeArticle, translateArticle, streamSummarizeArticle, streamTranslateArticle, fetchArticleContent } from '../fetcher.js'
@@ -237,7 +236,6 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
     const unread = query.unread === '1' ? true : query.unread === '0' ? false : undefined
     const liked = query.liked === '1'
     const bookmarked = query.bookmarked === '1'
-    const hasPostFilter = unread !== undefined || liked || bookmarked
 
     try {
       const filter = buildMeiliFilter({
@@ -245,19 +243,13 @@ export async function articleRoutes(api: FastifyInstance): Promise<void> {
         category_id: query.category_id,
         since: query.since,
         until: query.until,
+        unread,
+        liked,
+        bookmarked,
       })
 
-      let ids: number[]
-      if (hasPostFilter) {
-        ids = await meiliSearchWithPagination(query.q, {
-          targetLimit: limit,
-          filter,
-          checkIds: (candidateIds) => checkArticleIds(candidateIds, { unread, liked, bookmarked }),
-        })
-      } else {
-        const hits = await meiliSearch(query.q, { limit, filter })
-        ids = hits.map((h) => h.id)
-      }
+      const hits = await meiliSearch(query.q, { limit, filter })
+      const ids = hits.map((h) => h.id)
 
       const articles = getArticlesByIds(ids)
       reply.send({ articles })

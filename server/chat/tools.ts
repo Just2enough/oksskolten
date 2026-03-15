@@ -2,7 +2,6 @@ import {
   searchArticles,
   getArticleById,
   getArticlesByIds,
-  checkArticleIds,
   getFeeds,
   getCategories,
   getReadingStats,
@@ -15,7 +14,7 @@ import {
   type ArticleListItem,
   type ArticleDetail,
 } from '../db.js'
-import { buildMeiliFilter, meiliSearch, meiliSearchWithPagination } from '../search/client.js'
+import { buildMeiliFilter, meiliSearch } from '../search/client.js'
 import { isSearchReady } from '../search/sync.js'
 import { summarizeArticle, translateArticle } from '../fetcher.js'
 import { getSetting } from '../db/settings.js'
@@ -84,22 +83,11 @@ const searchArticlesTool: ToolDef = {
 
     if (query && isSearchReady()) {
       // Meilisearch path
-      const filter = buildMeiliFilter({ feed_id, category_id, since, until })
+      const filter = buildMeiliFilter({ feed_id, category_id, since, until, unread, liked, bookmarked })
       const meiliSort = sort ? [`${sort}:desc`] : undefined
-      const hasPostFilter = unread !== undefined || liked || bookmarked
 
-      let ids: number[]
-      if (hasPostFilter) {
-        ids = await meiliSearchWithPagination(query, {
-          targetLimit: limit,
-          filter,
-          sort: meiliSort,
-          checkIds: (candidateIds) => checkArticleIds(candidateIds, { unread, liked, bookmarked }),
-        })
-      } else {
-        const hits = await meiliSearch(query, { limit, filter, sort: meiliSort })
-        ids = hits.map((h) => h.id)
-      }
+      const hits = await meiliSearch(query, { limit, filter, sort: meiliSort })
+      const ids = hits.map((h) => h.id)
       results = getArticlesByIds(ids)
     } else {
       // No query or search not ready: SQLite fallback

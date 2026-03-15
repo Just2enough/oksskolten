@@ -1,7 +1,7 @@
 import { getDb, runNamed, getNamed, allNamed } from './connection.js'
 import type { Article, ArticleListItem, ArticleDetail } from './types.js'
 import type { MeiliArticleDoc } from '../search/client.js'
-import { syncArticleToSearch, deleteArticleFromSearch, syncArticleScoreToSearch } from '../search/sync.js'
+import { syncArticleToSearch, deleteArticleFromSearch, syncArticleScoreToSearch, syncArticleFiltersToSearch } from '../search/sync.js'
 
 function buildMeiliDoc(id: number): MeiliArticleDoc | null {
   const row = getDb().prepare(`
@@ -10,7 +10,10 @@ function buildMeiliDoc(id: number): MeiliArticleDoc | null {
            COALESCE(full_text_translated, '') AS full_text_translated,
            lang,
            COALESCE(CAST(strftime('%s', published_at) AS INTEGER), 0) AS published_at,
-           COALESCE(score, 0) AS score
+           COALESCE(score, 0) AS score,
+           (seen_at IS NULL) AS is_unread,
+           (liked_at IS NOT NULL) AS is_liked,
+           (bookmarked_at IS NOT NULL) AS is_bookmarked
     FROM articles WHERE id = ?
   `).get(id) as MeiliArticleDoc | undefined
   return row ?? null
@@ -224,6 +227,7 @@ export function markArticleSeen(
     return getDb().prepare('SELECT seen_at, read_at FROM articles WHERE id = ?').get(id) as { seen_at: string | null; read_at: string | null } | undefined
   })()
   if (!seen) syncScoreToSearch(id)
+  syncArticleFiltersToSearch([{ id, is_unread: !seen }])
   if (!row) return undefined
   return { seen_at: row.seen_at, read_at: row.read_at }
 }
@@ -234,11 +238,21 @@ export function markArticlesSeen(ids: number[]): { updated: number } {
   const result = getDb().prepare(
     `UPDATE articles SET seen_at = datetime('now') WHERE id IN (${placeholders}) AND seen_at IS NULL`,
   ).run(...ids)
+  if (result.changes > 0) {
+    syncArticleFiltersToSearch(ids.map(id => ({ id, is_unread: false })))
+  }
   return { updated: result.changes }
 }
 
 export function markAllSeenByFeed(feedId: number): { updated: number } {
+  // Collect affected IDs before update for search sync
+  const affectedIds = (getDb().prepare(
+    'SELECT id FROM articles WHERE feed_id = ? AND seen_at IS NULL',
+  ).all(feedId) as { id: number }[]).map(r => r.id)
   const result = getDb().prepare("UPDATE articles SET seen_at = datetime('now') WHERE feed_id = ? AND seen_at IS NULL").run(feedId)
+  if (affectedIds.length > 0) {
+    syncArticleFiltersToSearch(affectedIds.map(id => ({ id, is_unread: false })))
+  }
   return { updated: result.changes }
 }
 
@@ -256,6 +270,7 @@ export function markArticleLiked(
     return getDb().prepare('SELECT liked_at FROM articles WHERE id = ?').get(id) as { liked_at: string | null } | undefined
   })()
   syncScoreToSearch(id)
+  syncArticleFiltersToSearch([{ id, is_liked: liked }])
   if (!row) return undefined
   return { liked_at: row.liked_at }
 }
@@ -279,6 +294,7 @@ export function markArticleBookmarked(
     return getDb().prepare('SELECT bookmarked_at FROM articles WHERE id = ?').get(id) as { bookmarked_at: string | null } | undefined
   })()
   syncScoreToSearch(id)
+  syncArticleFiltersToSearch([{ id, is_bookmarked: bookmarked }])
   if (!row) return undefined
   return { bookmarked_at: row.bookmarked_at }
 }
@@ -299,6 +315,7 @@ export function recordArticleRead(
     return getDb().prepare('SELECT seen_at, read_at FROM articles WHERE id = ?').get(id) as { seen_at: string | null; read_at: string | null } | undefined
   })()
   syncScoreToSearch(id)
+  syncArticleFiltersToSearch([{ id, is_unread: false }])
   return row ? { seen_at: row.seen_at, read_at: row.read_at } : undefined
 }
 
@@ -415,33 +432,6 @@ export function getArticlesByIds(
     ${where}
     ORDER BY CASE a.id ${orderCase} END
   `).all(...ids) as ArticleListItem[]
-}
-
-/**
- * Check which of the given IDs pass the post-filter conditions.
- * Used by meiliSearchWithPagination.
- */
-export function checkArticleIds(
-  ids: number[],
-  opts?: { unread?: boolean; liked?: boolean; bookmarked?: boolean },
-): number[] {
-  if (ids.length === 0) return []
-  if (opts?.unread === undefined && !opts?.liked && !opts?.bookmarked) return ids
-
-  const placeholders = ids.map(() => '?').join(',')
-  const conditions: string[] = [`id IN (${placeholders})`]
-  if (opts?.unread !== undefined) {
-    conditions.push(opts.unread ? 'seen_at IS NULL' : 'seen_at IS NOT NULL')
-  }
-  if (opts?.liked) conditions.push('liked_at IS NOT NULL')
-  if (opts?.bookmarked) conditions.push('bookmarked_at IS NOT NULL')
-
-  const rows = getDb().prepare(
-    `SELECT id FROM articles WHERE ${conditions.join(' AND ')}`,
-  ).all(...ids) as { id: number }[]
-  const passingSet = new Set(rows.map((r) => r.id))
-  // Preserve Meilisearch ranking order
-  return ids.filter((id) => passingSet.has(id))
 }
 
 // --- Search queries ---

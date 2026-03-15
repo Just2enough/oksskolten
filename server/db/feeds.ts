@@ -146,7 +146,10 @@ export function updateFeed(
              COALESCE(full_text_translated, '') AS full_text_translated,
              lang,
              COALESCE(CAST(strftime('%s', published_at) AS INTEGER), 0) AS published_at,
-             COALESCE(score, 0) AS score
+             COALESCE(score, 0) AS score,
+             (seen_at IS NULL) AS is_unread,
+             (liked_at IS NOT NULL) AS is_liked,
+             (bookmarked_at IS NOT NULL) AS is_bookmarked
       FROM articles WHERE feed_id = ?
     `).all(id) as MeiliArticleDoc[]
     syncArticlesByFeedToSearch(docs)
@@ -170,7 +173,10 @@ export function bulkMoveFeedsToCategory(feedIds: number[], categoryId: number | 
            COALESCE(full_text_translated, '') AS full_text_translated,
            lang,
            COALESCE(CAST(strftime('%s', published_at) AS INTEGER), 0) AS published_at,
-           COALESCE(score, 0) AS score
+           COALESCE(score, 0) AS score,
+           (seen_at IS NULL) AS is_unread,
+           (liked_at IS NOT NULL) AS is_liked,
+           (bookmarked_at IS NOT NULL) AS is_bookmarked
     FROM articles WHERE feed_id IN (${placeholders})
   `).all(...feedIds) as MeiliArticleDoc[]
   syncArticlesByFeedToSearch(allDocs)
