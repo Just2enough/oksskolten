@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, type KeyboardEvent } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback, type KeyboardEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Send } from 'lucide-react'
 import useSWR from 'swr'
@@ -46,6 +46,10 @@ export function HomePage() {
   }, [resetKey, reset])
 
   const hasMessages = messages.length > 0
+
+  const handleConversationCreated = useCallback((id: string) => {
+    window.history.replaceState(null, '', `/chat/${id}`)
+  }, [])
 
   // Stable greeting per mount (no re-roll on re-render)
   const greeting = useMemo(
@@ -164,7 +168,7 @@ export function HomePage() {
   // Conversation view — delegate to ChatPanel
   return (
     <div className="h-[calc(100dvh-var(--header-height))]">
-      <ChatPanel variant="full" chatState={chatState} />
+      <ChatPanel variant="full" chatState={chatState} onConversationCreated={handleConversationCreated} />
     </div>
   )
 }
