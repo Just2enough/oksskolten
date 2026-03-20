@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.3.1](https://github.com/babarot/oksskolten/compare/v0.3.0...v0.3.1) - 2026-03-20
+### Improvements
+- Perf/score recalc daily batch by @asonas in https://github.com/babarot/oksskolten/pull/19
+- Update article excerpt generation to strip Markdown syntax by @asonas in https://github.com/babarot/oksskolten/pull/21
+
 ## [v0.3.0](https://github.com/babarot/oksskolten/compare/v0.2.0...v0.3.0) - 2026-03-19
 ### New Features
 - Feature/keyboard navigation by @asonas in https://github.com/babarot/oksskolten/pull/12
